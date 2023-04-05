@@ -1,0 +1,57 @@
+---
+title: "Instacart Orders"
+author: "Thalia Taffe"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r}
+library(dplyr)
+
+aisles <- read.csv("aisles.csv")
+departments <- read.csv("departments.csv")
+order_products <- read.csv("order_products__train.csv")
+orders <- read.csv("orders.csv")
+products <- read.csv("products.csv")
+```
+
+```{r, warning=FALSE}
+orders <- orders %>% filter(eval_set == "train")
+
+# merge aisles on products (aisle id) and departments on products (department id)
+products <- inner_join(aisles, products, by = "aisle_id")
+products <- inner_join(departments, products, by = "department_id")
+
+# merge orders and order_products (on order id)
+orders <- inner_join(orders, order_products, by = "order_id") %>% select(!eval_set)
+
+# merge both datasets ()
+orders <- inner_join(orders, products, by = "product_id")
+```
+
+```{r}
+orders <- orders %>% 
+  filter(!department == "missing" & days_since_prior_order > 0)
+```
+
+
+```{r}
+# select random subset of 2000 id
+set.seed(542)
+
+ids <- unique(orders$user_id) %>% sample(500)
+orders <- orders %>% filter(user_id %in% ids)
+
+orders
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
