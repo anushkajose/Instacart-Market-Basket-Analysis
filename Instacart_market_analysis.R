@@ -161,17 +161,17 @@ top_prod %>%
 
 ## 2. The most common aisles which are reordered from
 aisle_reorder <- orders %>%
-                filter(reordered == 1) %>%
-                group_by(department,aisle) %>% 
-                summarise(num_reorders = n()) %>% 
-                arrange(desc(num_reorders)) %>%
-                ungroup() %>%
-                glimpse()
-                
-        
+  filter(reordered == 1) %>%
+  group_by(department,aisle) %>% 
+  summarise(num_reorders = n()) %>% 
+  arrange(desc(num_reorders)) %>%
+  ungroup() %>%
+  glimpse()
+
+
 aisle_reorder%>%
-slice_max(num_reorders, n = 50) %>%
-ggplot(aes(label = aisle, size = num_reorders, color = department))+
+  slice_max(num_reorders, n = 50) %>%
+  ggplot(aes(label = aisle, size = num_reorders, color = department))+
   geom_text_wordcloud() +
   scale_size_area(max_size = 10)
 
@@ -179,8 +179,8 @@ ggplot(aes(label = aisle, size = num_reorders, color = department))+
 
 ####### Convert the data to a transaction format
 #transactions <- orders %>%
- # group_by(user_id,order_number) %>%
-  #summarise(products = list(as.character(product_name)))
+# group_by(user_id,order_number) %>%
+#summarise(products = list(as.character(product_name)))
 
 ###### Perform market basket analysis using the Apriori algorithm
 #rules <- apriori(transactions$products, parameter = list(support = 0.001, confidence = 0.8, maxlen = 3))
@@ -190,6 +190,9 @@ ggplot(aes(label = aisle, size = num_reorders, color = department))+
 #sorted_rules <- sort(rules, by = "support", decreasing = TRUE)
 #save(sorted_rules, file = "sorted_rules.RDA")
 #load("sorted_rules.RDA")
+
+
+#Try to do distinct to see distinct pairs
 
 ##### Print the top 20 rules
 #top20 <- inspect(head(sorted_rules, n = 50))
@@ -212,7 +215,6 @@ orders %>% group_by(order_hour_of_day) %>% summarize(count = n()) %>% mutate(per
 #5. Topic Modeling
 
 library(topicmodels)
-library(dplyr)
 library(tidyr)
 library(tidytext)
 
@@ -224,33 +226,54 @@ products <- orders %>%
 # Create document-term matrix
 prod_dtm <- products %>%
   count(order_id, product_name) %>%
-  cast_tdm(product_name, order_id, n)
-
-dtm <- products %>%
-  mutate(product_name = str_replace_all(product_name, " ", "_")) %>%
-#  count(order_id, product_name) %>%
-  unnest_tokens(term, product_name) %>%
-  cast_tdm(term, order_id)
-
-#lda <- LDA(prod_dtm, k = 12, control = list(seed = 123))
-#save(lda, file = "lda.Rda")
+  cast_dtm(order_id, product_name, n)
 
 
-#load("lda.Rda")
-#lda
+lda <- LDA(prod_dtm, k = 5, control = list(seed = 123))
+
 
 #Word distribution associated with each topic
-#lda_topics <- tidy(lda, matrix = "beta")
-#head(lda_topics, n = 20)
-#tail(lda_topics)
+lda_topics <- tidy(lda, matrix = "beta")
+head(lda_topics, n = 20)
+
+#Most common word combinations
+lda_topics %>% slice_max(beta, n = 10)
+
+#Most common words in the topics
+top_terms <- lda_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 8) %>% 
+  mutate(topic = factor(topic))
+
+top_terms %>%
+  ggplot(aes(beta, term, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free_y", ncol = 4) 
+
+topic_names <- c(" Organic Fruits & Dairy",
+                 "Organic Fruits & Veggie",
+                 "Organic Mexican Meal",
+                 "Salads & Snacks",
+                 "Beverages & Snacks")
 
 
 
+top_terms %>% 
+  mutate(topic = as_factor(topic_names[topic])) %>%
+  ggplot(aes(beta, term, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  xlab("Relative Frequency")
 
 
+#INSIGHTS 
+#1. Consumers are interested in organic and healthy food options, as seen in topics 1, 2, and 3. This suggests that there is a growing trend towards healthy eating and a preference for organic produce.
 
+#2. Mexican-inspired meals are popular among consumers, as seen in topic 3. This could be due to the popularity of Mexican cuisine and the availability of pre-packaged Mexican-inspired meal options in grocery stores.
 
+#3. Consumers tend to purchase a mix of fresh produce, dairy, and snacks, as seen in topics 1, 2, and 4. This suggests that consumers are looking for a variety of options to satisfy different cravings and meal preferences.
 
+#4. Beverages and snacks are a popular combination for consumers, as seen in topic 5. This suggests that consumers are interested in convenient and easy-to-prepare snack options, as well as refreshing beverage choices.
 
 
 
