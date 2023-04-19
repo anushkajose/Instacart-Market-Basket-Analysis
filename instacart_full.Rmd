@@ -1,0 +1,285 @@
+---
+title: "instacart_full"
+author: "Thalia Taffe"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggwordcloud)
+library(tidytext)
+library(topicmodels)
+library(tidyr)
+
+aisles <- read.csv("aisles.csv")
+departments <- read.csv("departments.csv")
+order_products <- read.csv("order_products__train.csv")
+orders <- read.csv("orders.csv")
+products <- read.csv("products.csv")
+```
+
+```{r, warning=FALSE}
+orders <- orders %>% filter(eval_set == "train")
+
+# merge aisles on products (aisle id) and departments on products (department id)
+products <- inner_join(aisles, products, by = "aisle_id")
+products <- inner_join(departments, products, by = "department_id")
+
+# merge orders and order_products (on order id)
+orders <- inner_join(orders, order_products, by = "order_id") %>%
+  dplyr::select(!eval_set)
+
+# merge both datasets ()
+orders <- inner_join(orders, products, by = "product_id")
+orders <- orders %>% 
+  filter(!department == "missing" & days_since_prior_order > 0)
+```
+
+
+```{r}
+# select random subset of 2000 id
+set.seed(542)
+
+ids <- unique(orders$user_id) %>% sample(500)
+orders <- orders %>% filter(user_id %in% ids)
+
+sum(unique(orders$order_id))
+sum(unique(orders$user_id))
+orders
+```
+
+
+```{r}
+## Checking for missing values
+
+# count the number of missing values in each column
+missing_counts <- colSums(is.na(orders))
+
+# create a table with the missing value counts
+missing_table <- data.frame(
+  column_names = names(missing_counts),
+  missing_count = missing_counts,
+  row.names = NULL
+)
+
+missing_table
+```
+
+```{r}
+## EDA
+# 1.The most commonly bought products and its respective department 
+orders <- orders %>% ungroup() %>% glimpse()
+# group by department and product
+dept_prod_counts <- orders %>%
+  group_by(department, product_name) %>%
+  filter(reordered == 1) %>%
+  summarise(prod_count = n()) %>%
+  ungroup()
+
+# select top 10 products for each department
+top_prod <- dept_prod_counts %>%
+  group_by(department) %>%
+  filter(prod_count >= 5) 
+
+top_prod <- top_prod %>%  arrange(desc(prod_count)) 
+top_prod$department <- factor(top_prod$department)
+top_prod %>% glimpse()
+
+
+top_prod %>%
+  ggplot(aes(prod_count, product_name, fill = department)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ department, scales = "free_y", ncol = 4) 
+
+
+## 2. The most common aisles which are reordered from
+aisle_reorder <- orders %>%
+                filter(reordered == 1) %>%
+                group_by(department,aisle) %>% 
+                summarise(num_reorders = n()) %>% 
+                arrange(desc(num_reorders)) %>%
+                ungroup() %>%
+                glimpse()
+                
+        
+aisle_reorder%>%
+slice_max(num_reorders, n = 50) %>%
+ggplot(aes(label = aisle, size = num_reorders, color = department))+
+  geom_text_wordcloud() +
+  scale_size_area(max_size = 10)
+```
+
+
+```{r}
+orders %>% 
+  group_by(user_id) %>% 
+  ggplot(aes(x = days_since_prior_order)) + geom_histogram()
+```
+
+```{r}
+orders %>% 
+  #group_by(user_id) %>% 
+  ggplot(aes(x = add_to_cart_order)) + geom_bar() + facet_wrap(~department)
+```
+
+
+```{r}
+shopper_type <- function(df){
+  convenience <- c("frozen", "bakery", "beverages", "babies", "pets", 
+                 "snacks", "household", "personal care", "alcohol", "other")
+  products <- df %>% group_by(user_id) %>% count()
+  df$purpose <- "Unknown"
+  c <- 0
+  s <- 0
+  
+  x <- 1
+  while (x <= length(df$department)){
+    if (df$department[x] %in% convenience){
+      c <- c + 1
+      } else {
+        s <- s + 1
+    }
+    if (c > s){
+      df$purpose[x] <- "Convenience"
+      } else {
+        df$purpose[x] <- "Shopping"
+      }
+    x = x + 1
+  }
+  i <- 1
+  while (i <= 500){
+    if (products$n[i] <= 8){
+      user <- products$user_id[i]
+      df$purpose[df$user_id == user] <- "Convenience"
+    }
+    i <- i + 1
+  }
+  return(df)
+}
+
+orders <- shopper_type(orders)
+```
+
+
+```{r}
+#ggplot(orders, aes(x = purpose, groupby = user_id)) + geom_bar()
+q <- orders %>% group_by(order_id) %>% count()
+o <- orders %>% group_by(user_id) %>% count() 
+dim(o)[1]
+dim(q)[1]
+# same length = no repeat users
+
+o %>% ggplot(aes(x = n)) + geom_histogram() + xlab("Number of Products in Order")
+orders %>% dplyr::count(purpose)
+```
+
+```{r}
+# bag of words
+order_sub <- orders %>% 
+  select(department, product_name) #%>% 
+  #mutate(department_id = as.integer(department_id))
+
+(order_tidy <- order_sub %>% unnest_tokens(word, product_name))
+
+order_counts <- order_tidy %>% 
+  group_by(word, department) %>%
+  summarize(term_frequency = n(), .groups = "drop") %>%
+  arrange(desc(term_frequency))
+
+order_counts
+```
+
+
+```{r}
+# all department wordcloud
+
+idf_department <-order_counts %>% 
+  group_by(department, word) %>%
+  summarize(term_frequency = sum(term_frequency)) %>%
+  bind_tf_idf(word, department, term_frequency) %>% 
+  arrange(desc(tf_idf))
+
+idf_department
+
+idf_department %>% 
+  slice_max(tf_idf, n = 8, with_ties = FALSE) %>%
+  ggplot() + geom_text_wordcloud_area(aes(label = word, size = tf_idf)) +
+  facet_wrap(~department) + scale_size_area(max_size = 4) 
+```
+
+
+```{r}
+#3 Market Basket Analysis
+
+####### Convert the data to a transaction format
+#transactions <- orders %>%
+ # group_by(user_id,order_number) %>%
+  #summarise(products = list(as.character(product_name)))
+
+###### Perform market basket analysis using the Apriori algorithm
+#rules <- apriori(transactions$products, parameter = list(support = 0.001, confidence = 0.8, maxlen = 3))
+#save(rules, file = "saved_rules.RDA")
+
+######Sorting
+#sorted_rules <- sort(rules, by = "support", decreasing = TRUE)
+#save(sorted_rules, file = "sorted_rules.RDA")
+#load("sorted_rules.RDA")
+
+##### Print the top 20 rules
+#top20 <- inspect(head(sorted_rules, n = 50))
+#save(top20, file = "top20_new.RDA")
+load("top20_new.RDA")
+top20
+
+#Plotting
+#plot(sorted_rules,method="graph",measure = "support",shading = "support",
+     #limit = 50,engine = "interactive" )
+
+#img <- readPNG("RPlots2.png")
+#grid::grid.raster(img)
+```
+
+
+```{r}
+#5. Topic Modeling
+
+library(topicmodels)
+library(dplyr)
+library(tidyr)
+library(tidytext)
+
+# Convert order data to product data
+products <- orders %>%
+  ungroup() %>%
+  select(order_id, product_name) 
+
+# Create document-term matrix
+prod_dtm <- products %>%
+  count(order_id, product_name) %>%
+  cast_tdm(product_name, order_id, n)
+
+#dtm <- 
+products %>%
+  mutate(product_name = str_replace_all(product_name, " ", "_")) %>%
+  count(order_id, product_name) %>%
+  unnest_tokens(term, product_name) #%>%
+  #cast_tdm(term, order_id)
+
+#lda <- LDA(prod_dtm, k = 12, control = list(seed = 123))
+#save(lda, file = "lda.Rda")
+
+
+#load("lda.Rda")
+#lda
+
+#Word distribution associated with each topic
+#lda_topics <- tidy(lda, matrix = "beta")
+#head(lda_topics, n = 20)
+#tail(lda_topics)
+```
+
+
+
+
