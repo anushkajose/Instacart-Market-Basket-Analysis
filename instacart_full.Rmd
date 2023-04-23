@@ -67,9 +67,12 @@ missing_table <- data.frame(
 missing_table
 ```
 
-```{r}
 ## EDA
-# 1.The most commonly bought products and its respective department 
+
+## 1.The most commonly bought products and its respective department 
+```{r}
+
+
 orders <- orders %>% ungroup() %>% glimpse()
 # group by department and product
 dept_prod_counts <- orders %>%
@@ -92,9 +95,11 @@ top_prod %>%
   ggplot(aes(prod_count, product_name, fill = department)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~ department, scales = "free_y", ncol = 4) 
+```
 
 
 ## 2. The most common aisles which are reordered from
+```{r}
 aisle_reorder <- orders %>%
                 filter(reordered == 1) %>%
                 group_by(department,aisle) %>% 
@@ -112,12 +117,16 @@ ggplot(aes(label = aisle, size = num_reorders, color = department))+
 ```
 
 
+## 3
+
 ```{r}
 orders %>% 
   group_by(user_id) %>% 
   ggplot(aes(x = days_since_prior_order)) + geom_histogram()
 ```
 
+
+## 4
 ```{r}
 orders %>% 
   #group_by(user_id) %>% 
@@ -162,7 +171,7 @@ shopper_type <- function(df){
 orders <- shopper_type(orders)
 ```
 
-
+#5
 ```{r}
 #ggplot(orders, aes(x = purpose, groupby = user_id)) + geom_bar()
 q <- orders %>% group_by(order_id) %>% count()
@@ -191,8 +200,9 @@ order_counts <- order_tidy %>%
 order_counts
 ```
 
+#6
 
-```{r}
+```{r, warning = FALSE}
 # all department wordcloud
 
 idf_department <-order_counts %>% 
@@ -209,46 +219,18 @@ idf_department %>%
   facet_wrap(~department) + scale_size_area(max_size = 4) 
 ```
 
-
+## 7 Hourly order pattern
 ```{r}
-#3 Market Basket Analysis
-
-####### Convert the data to a transaction format
-#transactions <- orders %>%
- # group_by(user_id,order_number) %>%
-  #summarise(products = list(as.character(product_name)))
-
-###### Perform market basket analysis using the Apriori algorithm
-#rules <- apriori(transactions$products, parameter = list(support = 0.001, confidence = 0.8, maxlen = 3))
-#save(rules, file = "saved_rules.RDA")
-
-######Sorting
-#sorted_rules <- sort(rules, by = "support", decreasing = TRUE)
-#save(sorted_rules, file = "sorted_rules.RDA")
-#load("sorted_rules.RDA")
-
-##### Print the top 20 rules
-#top20 <- inspect(head(sorted_rules, n = 50))
-#save(top20, file = "top20_new.RDA")
-load("top20_new.RDA")
-top20
-
-#Plotting
-#plot(sorted_rules,method="graph",measure = "support",shading = "support",
-     #limit = 50,engine = "interactive" )
-
-#img <- readPNG("RPlots2.png")
-#grid::grid.raster(img)
+orders %>% group_by(order_hour_of_day) %>% summarize(count = n()) %>% mutate(percentage = count/sum(count)) %>% ggplot(aes(x = as.factor(order_hour_of_day), y = percentage)) + geom_col() + labs(y = "Percentage of Order", title = "Hourly Orders")
 ```
 
 
+# Topic Modeling
 ```{r}
-#5. Topic Modeling
 
-library(topicmodels)
-library(dplyr)
-library(tidyr)
-library(tidytext)
+
+
+
 
 # Convert order data to product data
 products <- orders %>%
@@ -260,26 +242,100 @@ prod_dtm <- products %>%
   count(order_id, product_name) %>%
   cast_tdm(product_name, order_id, n)
 
-#dtm <- 
-products %>%
-  mutate(product_name = str_replace_all(product_name, " ", "_")) %>%
-  count(order_id, product_name) %>%
-  unnest_tokens(term, product_name) #%>%
-  #cast_tdm(term, order_id)
-
-#lda <- LDA(prod_dtm, k = 12, control = list(seed = 123))
-#save(lda, file = "lda.Rda")
-
-
-#load("lda.Rda")
-#lda
+lda <- LDA(prod_dtm, k = 5, control = list(seed = 123))
 
 #Word distribution associated with each topic
-#lda_topics <- tidy(lda, matrix = "beta")
-#head(lda_topics, n = 20)
-#tail(lda_topics)
+lda_topics <- tidy(lda, matrix = "beta")
+head(lda_topics, n = 20)
+
+#Most common word combinations
+lda_topics %>% slice_max(beta, n = 10)
+
+#Most common words in the topics
+top_terms <- lda_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 8) %>% 
+  mutate(topic = factor(topic))
+
+top_terms %>%
+  ggplot(aes(beta, term, fill = topic)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free_y", ncol = 4) 
+
+
+
+```
+
+
+# Market Basket Analysis  
+```{r}
+library(png)
+library(grid)
+library(arules)
+
+#Convert the data to a transaction format
+transactions <- orders %>%
+ group_by(user_id,order_number) %>%
+ summarise(products = list(as.character(product_name)))
+
+#Perform market basket analysis using the Apriori algorithm
+#rules <- apriori(transactions$products, parameter = list(support = 0.001, confidence = 0.8, minlen = 2,maxlen = 4))
+#save(rules, file = "saved_rules.RDA")
+load("saved_rules.RDA")
+#Sorting
+#sorted_rules <- sort(rules, by = "confidence", decreasing = TRUE)
+#save(sorted_rules, file = "sorted_rules.RDA")
+load("sorted_rules.RDA")
+
+
+# Print the top 20 rules
+top20 <- inspect(head(sorted_rules, n = 20))
+#save(top20, file = "top20_new.RDA")
+load("top20_new.RDA")
+top20
+
+#Plotting
+plot(sorted_rules,method="graph",measure = "support",shading = "support",
+     limit = 50,engine = "interactive" )
+
+#img <- readPNG("RPlots2.png")
+#grid.raster(img)
 ```
 
 
 
+# Train - Test Split
+````{r}
+library(rsample)
+
+#Making the response variable binary before splitting
+orders$purpose <- ifelse(orders$purpose == "Shopping",1,0)
+set.seed(232)
+split <- initial_split(orders, prop = 0.8)
+train <- training(split)
+test <- testing(split)
+
+```
+
+
+## Modeling - Logistic Regression
+
+## 1. Logit
+```{r}
+
+formula <- purpose ~ order_dow + order_hour_of_day + days_since_prior_order + add_to_cart_order + reordered + department
+
+fit_logit <- glm(formula = formula, data = train, family = binomial(link = "logit") )
+
+summary(fit_logit)
+```
+
+
+## 2. Probit
+
+```{r}
+fit_probit <- glm(formula = formula, data = train, family = binomial(link = "probit") )
+summary(fit_probit)
+
+```
 
