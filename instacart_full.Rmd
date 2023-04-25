@@ -12,6 +12,7 @@ library(ggwordcloud)
 library(tidytext)
 library(topicmodels)
 library(tidyr)
+seedd = 542
 
 aisles <- read.csv("aisles.csv")
 departments <- read.csv("departments.csv")
@@ -40,7 +41,7 @@ orders <- orders %>%
 
 ```{r}
 # select random subset of 2000 id
-set.seed(542)
+set.seed(seedd)
 
 ids <- unique(orders$user_id) %>% sample(500)
 orders <- orders %>% filter(user_id %in% ids)
@@ -242,7 +243,7 @@ prod_dtm <- products %>%
   count(order_id, product_name) %>%
   cast_tdm(product_name, order_id, n)
 
-lda <- LDA(prod_dtm, k = 5, control = list(seed = 123))
+lda <- LDA(prod_dtm, k = 5, control = list(seed = seedd))
 
 #Word distribution associated with each topic
 lda_topics <- tidy(lda, matrix = "beta")
@@ -389,6 +390,61 @@ lasso_test <- test %>%
 lasso_test_matrix <- as.matrix(lasso_test)
 prediction_lasso <-  predict(fit_lasso,newx = lasso_test_matrix, s = 0.01)
 ```
+
+
+## 4. Random Forest
+
+```{r}
+library(ranger)
+
+default_rf <- rand_forest() %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger")
+
+drf_fit <- default_rf %>% fit(purpose ~ ., data = train) %>% extract_fit_engine()
+drf_fit
+```
+
+
+## 5. Optimized Random Forest
+
+```{r}
+set.seed(seedd)
+
+trees <- seq(100, 1000, 100)
+pred <- c(2, 3)
+
+best_rf_error <- 1
+error_list <- list()
+
+for (t in trees){
+  for (p in pred){
+    rf_model <- rand_forest(mode = "classification", engine = "ranger", 
+                            mtry = p, trees = t)
+    rf_fit <- rf_model %>% fit(purpose ~ ., data = train) %>% extract_fit_engine()
+    error_list <- append(error_list, rf_fit$prediction.error)
+    if (rf_fit$prediction.error < best_rf_error){
+      best_rf_error = rf_fit$prediction.error
+      best_model = rf_fit
+    }
+  }
+}
+best_model
+#error_list
+```
+
+
+```{r}
+best_rf_pred <- predict(best_model, test, type = "response")
+#brf_pred <- rep(0, dim(test)[1])
+best_rf_pred <- best_rf_pred$predictions[, 2]
+best_rf_pred <- ifelse(best_rf_pred >= 0.5, 1, 0)
+
+table(test$purpose, best_rf_pred)/1310*100
+```
+
+
+
 
 
 # Model Selection - ROC
