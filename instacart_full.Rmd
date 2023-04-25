@@ -311,7 +311,7 @@ library(rsample)
 #Making the response variable binary before splitting
 orders$purpose <- ifelse(orders$purpose == "Shopping",1,0)
 set.seed(232)
-split <- initial_split(orders, prop = 0.8)
+split <- initial_split(orders, prop = 0.8, strata = purpose)
 train <- training(split)
 test <- testing(split)
 
@@ -330,6 +330,9 @@ fit_logit <- glm(formula = formula, data = train, family = binomial(link = "logi
 summary(fit_logit)
 ```
 
+```{r}
+prediction_logit <- fit_logit %>% predict(test, type = "response")
+```
 
 ## 2. Probit
 
@@ -338,4 +341,68 @@ fit_probit <- glm(formula = formula, data = train, family = binomial(link = "pro
 summary(fit_probit)
 
 ```
+
+```{r}
+prediction_probit <- fit_probit %>% predict(test, type = "response")
+```
+
+
+## 3. LASSO
+```{r}
+library(glmnet)
+library(modelr)
+
+y <- train %>% select(purpose) %>% as.matrix
+  
+order_x <- train %>%
+  modelr::model_matrix(purpose ~ 
+                          order_dow +
+                          order_hour_of_day +
+                          days_since_prior_order + 
+                          add_to_cart_order +
+                          reordered + 
+                          department 
+                          ) 
+order_x %>% glimpse()
+```
+
+
+```{r}
+fit_lasso <- glmnet(x = order_x,
+                    y = y, 
+                    family = "binomial")
+
+coef(fit_lasso, s = 0.01)
+```
+
+
+```{r}
+lasso_test <- test %>%
+  modelr::model_matrix(purpose ~ 
+                         order_dow+
+                         order_hour_of_day+
+                         days_since_prior_order+
+                          add_to_cart_order +
+                          reordered +
+                          department 
+                          ) 
+lasso_test_matrix <- as.matrix(lasso_test)
+prediction_lasso <-  predict(fit_lasso,newx = lasso_test_matrix, s = 0.01)
+```
+
+
+# Model Selection - ROC
+
+```{r}
+library(pROC)
+roc_logit = roc(test$purpose ~ prediction_logit, plot = TRUE, print.auc = TRUE,main ="ROC Curve - Logit ")
+
+roc_probit = roc(test$purpose ~ prediction_probit, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Logit ")
+
+roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
+
+##Need to add for the other two models
+
+```
+
 
