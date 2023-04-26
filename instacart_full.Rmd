@@ -13,6 +13,7 @@ library(tidytext)
 library(topicmodels)
 library(tidyr)
 seedd = 542
+theme_set(theme_bw())
 
 aisles <- read.csv("aisles.csv")
 departments <- read.csv("departments.csv")
@@ -123,7 +124,7 @@ ggplot(aes(label = aisle, size = num_reorders, color = department))+
 ```{r}
 orders %>% 
   group_by(user_id) %>% 
-  ggplot(aes(x = days_since_prior_order)) + geom_histogram()
+  ggplot(aes(x = days_since_prior_order)) + geom_histogram() + xlab("Days Since Prior Order")
 ```
 
 
@@ -160,7 +161,7 @@ shopper_type <- function(df){
   }
   i <- 1
   while (i <= 500){
-    if (products$n[i] <= 8){
+    if (products$n[i] <= 7){
       user <- products$user_id[i]
       df$purpose[df$user_id == user] <- "Convenience"
     }
@@ -176,12 +177,12 @@ orders <- shopper_type(orders)
 ```{r}
 #ggplot(orders, aes(x = purpose, groupby = user_id)) + geom_bar()
 q <- orders %>% group_by(order_id) %>% count()
-o <- orders %>% group_by(user_id) %>% count() 
+o <- orders %>% group_by(user_id) %>% count()  %>% rename(Products = n)
 dim(o)[1]
 dim(q)[1]
 # same length = no repeat users
 
-o %>% ggplot(aes(x = n)) + geom_histogram() + xlab("Number of Products in Order")
+o %>% ggplot(aes(x = Products, fill = Products <= 7)) + geom_histogram() + xlab("Number of Products in Order") + ggtitle("Distribution of Number of Products Ordered") + scale_fill_manual(values = c("navy blue", "light blue"), labels = c("Shopping", "Convenience"))
 orders %>% dplyr::count(purpose)
 ```
 
@@ -228,10 +229,7 @@ orders %>% group_by(order_hour_of_day) %>% summarize(count = n()) %>% mutate(per
 
 # Topic Modeling
 ```{r}
-
-
-
-
+set.seed(seedd)
 
 # Convert order data to product data
 products <- orders %>%
@@ -241,7 +239,7 @@ products <- orders %>%
 # Create document-term matrix
 prod_dtm <- products %>%
   count(order_id, product_name) %>%
-  cast_tdm(product_name, order_id, n)
+  cast_dtm(order_id, product_name, n)
 
 lda <- LDA(prod_dtm, k = 5, control = list(seed = seedd))
 
@@ -282,22 +280,22 @@ transactions <- orders %>%
 #Perform market basket analysis using the Apriori algorithm
 #rules <- apriori(transactions$products, parameter = list(support = 0.001, confidence = 0.8, minlen = 2,maxlen = 4))
 #save(rules, file = "saved_rules.RDA")
-load("saved_rules.RDA")
+#load("saved_rules.RDA")
 #Sorting
 #sorted_rules <- sort(rules, by = "confidence", decreasing = TRUE)
 #save(sorted_rules, file = "sorted_rules.RDA")
-load("sorted_rules.RDA")
+#load("sorted_rules.RDA")
 
 
 # Print the top 20 rules
-top20 <- inspect(head(sorted_rules, n = 20))
+#top20 <- inspect(head(sorted_rules, n = 20))
 #save(top20, file = "top20_new.RDA")
-load("top20_new.RDA")
-top20
+#load("top20_new.RDA")
+#top20
 
 #Plotting
-plot(sorted_rules,method="graph",measure = "support",shading = "support",
-     limit = 50,engine = "interactive" )
+#plot(sorted_rules,method="graph",measure = "support",shading = "support",
+     #limit = 50,engine = "interactive" )
 
 #img <- readPNG("RPlots2.png")
 #grid.raster(img)
@@ -308,14 +306,14 @@ plot(sorted_rules,method="graph",measure = "support",shading = "support",
 # Train - Test Split
 ````{r}
 library(rsample)
+set.seed(seedd)
 
 #Making the response variable binary before splitting
-orders$purpose <- ifelse(orders$purpose == "Shopping",1,0)
-set.seed(232)
+orders$purpose <- ifelse(orders$purpose == "Shopping", 1, 0)
+orders <- orders %>% mutate(purpose = as.factor(purpose))
 split <- initial_split(orders, prop = 0.8, strata = purpose)
 train <- training(split)
 test <- testing(split)
-
 ```
 
 
@@ -388,7 +386,7 @@ lasso_test <- test %>%
                           department 
                           ) 
 lasso_test_matrix <- as.matrix(lasso_test)
-prediction_lasso <-  predict(fit_lasso,newx = lasso_test_matrix, s = 0.01)
+prediction_lasso <-  predict(fit_lasso, newx = lasso_test_matrix, s = 0.01)
 ```
 
 
@@ -396,6 +394,7 @@ prediction_lasso <-  predict(fit_lasso,newx = lasso_test_matrix, s = 0.01)
 
 ```{r}
 library(ranger)
+set.seed(seedd)
 
 default_rf <- rand_forest() %>% 
   set_mode("classification") %>% 
@@ -403,6 +402,9 @@ default_rf <- rand_forest() %>%
 
 drf_fit <- default_rf %>% fit(purpose ~ ., data = train) %>% extract_fit_engine()
 drf_fit
+
+drf_pred <- predict(drf_fit, test, type = "response")
+
 ```
 
 
@@ -438,9 +440,9 @@ best_model
 best_rf_pred <- predict(best_model, test, type = "response")
 #brf_pred <- rep(0, dim(test)[1])
 best_rf_pred <- best_rf_pred$predictions[, 2]
-best_rf_pred <- ifelse(best_rf_pred >= 0.5, 1, 0)
+best_rf_pred_code <- ifelse(best_rf_pred >= 0.5, 1, 0)
 
-table(test$purpose, best_rf_pred)/1310*100
+table(test$purpose, best_rf_pred_code)/1310*100
 ```
 
 
@@ -453,12 +455,13 @@ table(test$purpose, best_rf_pred)/1310*100
 library(pROC)
 roc_logit = roc(test$purpose ~ prediction_logit, plot = TRUE, print.auc = TRUE,main ="ROC Curve - Logit ")
 
-roc_probit = roc(test$purpose ~ prediction_probit, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Logit ")
+roc_probit = roc(test$purpose ~ prediction_probit, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Probit ")
 
-roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
+#roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main #="ROC Curve - Lasso")
 
-##Need to add for the other two models
+roc_rand_forest <- roc(test$purpose ~ drf_pred$predictions[,2], plot = TRUE, print.auc = TRUE, main = "ROC Curve - Random Forest")
 
+roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred, plot = TRUE, print.auc = TRUE, main = "ROC Curve - Optimized Random Forest")
 ```
 
 
