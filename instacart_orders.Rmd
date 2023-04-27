@@ -5,9 +5,14 @@ date: "`r Sys.Date()`"
 output: pdf_document
 ---
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(dplyr)
 library(ggplot2)
+library(tidytext)
+library(ggwordcloud)
+```
+
+```{r}
 
 aisles <- read.csv("aisles.csv")
 departments <- read.csv("departments.csv")
@@ -34,10 +39,7 @@ orders <- inner_join(orders, products, by = "product_id")
 ```{r}
 orders <- orders %>% 
   filter(!department == "missing" & days_since_prior_order > 0)
-```
 
-
-```{r}
 # select random subset of 2000 id
 set.seed(542)
 
@@ -46,7 +48,7 @@ orders <- orders %>% filter(user_id %in% ids)
 
 sum(unique(orders$order_id))
 sum(unique(orders$user_id))
-orders
+#orders
 ```
 
 
@@ -63,6 +65,7 @@ orders %>%
   #group_by(user_id) %>% 
   ggplot(aes(x = add_to_cart_order)) + geom_bar() + facet_wrap(~department)
 ```
+
 
 
 ```{r}
@@ -102,6 +105,7 @@ shopper_type <- function(df){
 orders <- shopper_type(orders)
 ```
 
+
 ```{r}
 #ggplot(orders, aes(x = purpose, groupby = user_id)) + geom_bar()
 q <- orders %>% group_by(order_id) %>% count()
@@ -115,14 +119,16 @@ orders %>% dplyr::count(purpose)
 
 ```
 
-```{r}
-library(tidytext)
 
+
+
+```{r}
 order_sub <- orders %>% 
   select(department, product_name) #%>% 
   #mutate(department_id = as.integer(department_id))
 
 (order_tidy <- order_sub %>% unnest_tokens(word, product_name))
+## HERE IS ERROR - why?
 
 order_counts <- order_tidy %>% 
   group_by(word, department) %>%
@@ -132,18 +138,17 @@ order_counts <- order_tidy %>%
 order_counts
 ```
 
+=
+
 ```{r}
 # ex. frozen food
-library(ggwordcloud)
 
-order_counts %>% 
-  filter(department == "frozen") %>%
-  slice_max(term_frequency, n = 50) %>%
-  ggplot() +
-  geom_text_wordcloud_area(aes(label = word, size = term_frequency)) +
-  scale_size_area(max_size = 15)
+
+#order_counts %>% 
+  #filter(department == "frozen") %>%
+  #slice_max(term_frequency, n = 50) %>%
+  #ggplot() +
+  #geom_text_wordcloud_area(aes(label = word, size = term_frequency)) +
+  #scale_size_area(max_size = 15)
 ```
-
-
-
 

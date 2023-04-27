@@ -433,28 +433,26 @@ error_list <- list()
 
 for (t in trees){
   for (p in pred){
-    rf_model <- rand_forest(mode = "classification", engine = "ranger", 
-                            mtry = p, trees = t)
-    rf_fit <- rf_model %>% fit(purpose ~ ., data = train) %>% extract_fit_engine()
-    error_list <- append(error_list, rf_fit$prediction.error)
-    if (rf_fit$prediction.error < best_rf_error){
-      best_rf_error = rf_fit$prediction.error
-      best_model = rf_fit
+    rf_model <- rand_forest(mtry = p, trees = t) %>% 
+      set_mode("classification") %>% 
+      set_engine("ranger")
+    rf_wrkflow_fit <- workflow() %>% 
+      add_model(rf_model) %>%
+      add_formula(purpose ~ .) %>% fit(train)
+    err <- rf_wrkflow_fit$fit$fit$fit$prediction.error
+    error_list <- append(error_list, err)
+    if (err < best_rf_error){
+      best_rf_error = err
+      best_model = rf_wrkflow_fit
     }
   }
 }
 best_model
 #error_list
-```
 
-
-```{r}
-best_rf_pred <- predict(best_model, test, type = "response")
-#brf_pred <- rep(0, dim(test)[1])
-best_rf_pred <- best_rf_pred$predictions[, 2]
-best_rf_pred_code <- ifelse(best_rf_pred >= 0.5, 1, 0)
-
-table(test$purpose, best_rf_pred_code)/1310*100
+best_rf_pred_class <- best_model %>% predict(test, type = "class")
+best_rf_pred_prob <- best_model %>% predict(test, type = "prob")
+best_rf_pred <- bind_cols(best_rf_pred_class, best_rf_pred_prob)
 ```
 
 
@@ -473,7 +471,27 @@ roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, 
 
 roc_rand_forest <- roc(test$purpose ~ drf_pred$predictions[,2], plot = TRUE, print.auc = TRUE, main = "ROC Curve - Random Forest")
 
-roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred, plot = TRUE, print.auc = TRUE, main = "ROC Curve - Optimized Random Forest")
+roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred$.pred_1, plot = TRUE, print.auc = TRUE, main = "ROC Curve - Optimized Random Forest")
 ```
 
+
+# Model Assessment
+
+# 1.
+```{r}
+table(test$purpose, best_rf_pred$.pred_class)/1310*100
+```
+
+
+```{r}
+set.seed(seedd)
+
+orders_bootstrap <- train %>% bootstraps(times = 100)
+bootstrap_fit_orders <- fit_resamples(best_model, orders_bootstrap)
+#bootstrap_fit_orders$.metrics
+```
+
+
+
+```
 
