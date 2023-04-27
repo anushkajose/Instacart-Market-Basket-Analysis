@@ -485,14 +485,24 @@ roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred$.pred_1, plot = TRUE, p
 
 # 1.
 ```{r}
-table(test$purpose, best_rf_pred$.pred_class)/1310*100
+table(test$purpose, best_rf_pred$.pred_class)/(dim(test)*100)
 ```
+
+
+# 2.
+
+```{r}
+
+
+# 3.
+
+
 
 # Uncertainty Quantification
 
 ```{r}
 val_pred <- predict(best_model, val)$.pred_class
-table(val_pred, val$purpose)/50
+table(val_pred, val$purpose)/491*100
 ```
 
 ```{r}
