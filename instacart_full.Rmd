@@ -57,6 +57,55 @@ orders
 
 
 ```{r}
+shopper_type <- function(df){
+  convenience <- c("frozen", "bakery", "beverages", "babies", "pets", 
+                 "snacks", "household", "personal care", "alcohol", "other")
+  products <- df %>% group_by(user_id) %>% count()
+  df$purpose <- "Unknown"
+  c <- 0
+  s <- 0
+  
+  x <- 1
+  while (x <= length(df$department)){
+    if (df$department[x] %in% convenience){
+      c <- c + 1
+      } else {
+        s <- s + 1
+    }
+    if (c > s){
+      df$purpose[x] <- "Convenience"
+      } else {
+        df$purpose[x] <- "Shopping"
+      }
+    x = x + 1
+  }
+  i <- 1
+  while (i <= 500){
+    if (products$n[i] <= 7){
+      user <- products$user_id[i]
+      df$purpose[df$user_id == user] <- "Convenience"
+    }
+    i <- i + 1
+  }
+  return(df)
+}
+
+orders <- shopper_type(orders)
+```
+
+
+```{r}
+set.seed(seedd)
+orders$purpose <- ifelse(orders$purpose == "Shopping", 1, 0)
+orders <- orders %>% mutate(purpose = as.factor(purpose))
+
+val_ids <- unique(orders$user_id) %>% sample(50)
+val <- orders %>% filter(user_id %in% val_ids)
+orders <- orders %>% filter(!(user_id %in% val_ids))
+```
+
+
+```{r}
 ## Checking for missing values
 
 # count the number of missing values in each column
@@ -143,43 +192,6 @@ orders %>%
   ggplot(aes(x = add_to_cart_order)) + geom_bar() + facet_wrap(~department)
 ```
 
-
-```{r}
-shopper_type <- function(df){
-  convenience <- c("frozen", "bakery", "beverages", "babies", "pets", 
-                 "snacks", "household", "personal care", "alcohol", "other")
-  products <- df %>% group_by(user_id) %>% count()
-  df$purpose <- "Unknown"
-  c <- 0
-  s <- 0
-  
-  x <- 1
-  while (x <= length(df$department)){
-    if (df$department[x] %in% convenience){
-      c <- c + 1
-      } else {
-        s <- s + 1
-    }
-    if (c > s){
-      df$purpose[x] <- "Convenience"
-      } else {
-        df$purpose[x] <- "Shopping"
-      }
-    x = x + 1
-  }
-  i <- 1
-  while (i <= 500){
-    if (products$n[i] <= 7){
-      user <- products$user_id[i]
-      df$purpose[df$user_id == user] <- "Convenience"
-    }
-    i <- i + 1
-  }
-  return(df)
-}
-
-orders <- shopper_type(orders)
-```
 
 #5
 ```{r}
@@ -319,9 +331,6 @@ top10
 library(rsample)
 set.seed(seedd)
 
-#Making the response variable binary before splitting
-orders$purpose <- ifelse(orders$purpose == "Shopping", 1, 0)
-orders <- orders %>% mutate(purpose = as.factor(purpose))
 split <- initial_split(orders, prop = 0.8, strata = purpose)
 train <- training(split)
 test <- testing(split)
@@ -387,17 +396,17 @@ coef(fit_lasso, s = 0.01)
 
 
 ```{r}
-lasso_test <- test %>%
-  modelr::model_matrix(purpose ~ 
-                         order_dow+
-                         order_hour_of_day+
-                         days_since_prior_order+
-                          add_to_cart_order +
-                          reordered +
-                          department 
-                          ) 
-lasso_test_matrix <- as.matrix(lasso_test)
-prediction_lasso <-  predict(fit_lasso, newx = lasso_test_matrix, s = 0.01)
+#lasso_test <- test %>%
+  #modelr::model_matrix(purpose ~ 
+                         #order_dow+
+                         #order_hour_of_day+
+                         #days_since_prior_order+
+                          #add_to_cart_order +
+                          #reordered +
+                          #department 
+                          #) 
+#lasso_test_matrix <- as.matrix(lasso_test)
+#prediction_lasso <-  predict(fit_lasso, newx = lasso_test_matrix, s = 0.01)
 ```
 
 
@@ -456,9 +465,6 @@ best_rf_pred <- bind_cols(best_rf_pred_class, best_rf_pred_prob)
 ```
 
 
-
-
-
 # Model Selection - ROC
 
 ```{r}
@@ -467,7 +473,7 @@ roc_logit = roc(test$purpose ~ prediction_logit, plot = TRUE, print.auc = TRUE,m
 
 roc_probit = roc(test$purpose ~ prediction_probit, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Probit ")
 
-roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
+#roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
 
 roc_rand_forest <- roc(test$purpose ~ drf_pred$predictions[,2], plot = TRUE, print.auc = TRUE, main = "ROC Curve - Random Forest")
 
@@ -482,16 +488,23 @@ roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred$.pred_1, plot = TRUE, p
 table(test$purpose, best_rf_pred$.pred_class)/1310*100
 ```
 
+# Uncertainty Quantification
+
+```{r}
+val_pred <- predict(best_model, val)$.pred_class
+table(val_pred, val$purpose)/50
+```
 
 ```{r}
 set.seed(seedd)
+# auc on bootstrapped validation set
 
-orders_bootstrap <- train %>% bootstraps(times = 100)
+orders_bootstrap <- val %>% bootstraps(times = 10)
+#control_orders <- control_resamples(extract = tidy)
 bootstrap_fit_orders <- fit_resamples(best_model, orders_bootstrap)
-#bootstrap_fit_orders$.metrics
-```
-
-
-
+for (samp in bootstrap_fit_orders$.metrics){
+  s <- filter(samp, .metric == "roc_auc")
+  print(s$.estimate)
+}
 ```
 
