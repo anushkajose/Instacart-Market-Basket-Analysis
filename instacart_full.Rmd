@@ -12,6 +12,12 @@ library(ggwordcloud)
 library(tidytext)
 library(topicmodels)
 library(tidyr)
+library(modelr)
+library(ranger)
+library(tidymodels)
+library(rsample)
+library(arules)
+library(pROC)
 ```
 
 ```{r}
@@ -39,7 +45,7 @@ orders <- inner_join(orders, order_products, by = "order_id") %>%
 # merge both datasets ()
 orders <- inner_join(orders, products, by = "product_id")
 orders <- orders %>% 
-  filter(!department == "missing" & days_since_prior_order > 0)
+  filter(!department == "missing" & days_since_prior_order > 0 & !department == "other")
 ```
 
 
@@ -292,8 +298,6 @@ top_terms %>%
 
 # Market Basket Analysis  
 ```{r}
-library(arules)
-
 #Convert the data to a transaction format
 transactions <- orders %>%
  group_by(user_id,order_number) %>%
@@ -328,7 +332,6 @@ top10
 
 # Train - Test Split
 ````{r}
-library(rsample)
 set.seed(seedd)
 
 split <- initial_split(orders, prop = 0.8, strata = purpose)
@@ -341,7 +344,6 @@ test <- testing(split)
 
 ## 1. Logit
 ```{r}
-
 formula <- purpose ~ order_dow + order_hour_of_day + days_since_prior_order + add_to_cart_order + reordered + department
 
 fit_logit <- glm(formula = formula, data = train, family = binomial(link = "logit") )
@@ -374,15 +376,14 @@ library(modelr)
 y <- train %>% select(purpose) %>% as.matrix
   
 order_x <- train %>%
-  modelr::model_matrix(purpose ~ 
+  modelr::model_matrix(purpose ~ 0 +
                           order_dow +
                           order_hour_of_day +
                           days_since_prior_order + 
                           add_to_cart_order +
                           reordered + 
-                          department 
-                          ) 
-order_x %>% glimpse()
+                          department) 
+#order_x %>% glimpse()
 ```
 
 
@@ -396,25 +397,22 @@ coef(fit_lasso, s = 0.01)
 
 
 ```{r}
-#lasso_test <- test %>%
-  #modelr::model_matrix(purpose ~ 
-                         #order_dow+
-                         #order_hour_of_day+
-                         #days_since_prior_order+
-                          #add_to_cart_order +
-                          #reordered +
-                          #department 
-                          #) 
-#lasso_test_matrix <- as.matrix(lasso_test)
-#prediction_lasso <-  predict(fit_lasso, newx = lasso_test_matrix, s = 0.01)
+lasso_test <- test %>%
+  modelr::model_matrix(purpose ~ 0 + 
+                         order_dow +
+                         order_hour_of_day +
+                         days_since_prior_order +
+                         add_to_cart_order +
+                         reordered +
+                         department ) 
+lasso_test_matrix <- as.matrix(lasso_test)
+prediction_lasso <-  predict(fit_lasso, newx = lasso_test_matrix, s = 0.01)
 ```
 
 
 ## 4. Random Forest
 
 ```{r}
-library(ranger)
-library(tidymodels)
 set.seed(seedd)
 
 default_rf <- rand_forest() %>% 
@@ -425,7 +423,6 @@ drf_fit <- default_rf %>% fit(purpose ~ ., data = train) %>% extract_fit_engine(
 drf_fit
 
 drf_pred <- predict(drf_fit, test, type = "response")
-
 ```
 
 
@@ -468,12 +465,11 @@ best_rf_pred <- bind_cols(best_rf_pred_class, best_rf_pred_prob)
 # Model Selection - ROC
 
 ```{r}
-library(pROC)
 roc_logit = roc(test$purpose ~ prediction_logit, plot = TRUE, print.auc = TRUE,main ="ROC Curve - Logit ")
 
 roc_probit = roc(test$purpose ~ prediction_probit, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Probit ")
 
-#roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
+roc_lasso = roc(test$purpose ~ prediction_lasso, plot = TRUE, print.auc = TRUE, main ="ROC Curve - Lasso")
 
 roc_rand_forest <- roc(test$purpose ~ drf_pred$predictions[,2], plot = TRUE, print.auc = TRUE, main = "ROC Curve - Random Forest")
 
@@ -485,24 +481,36 @@ roc_optim_rand_forest <- roc(test$purpose ~ best_rf_pred$.pred_1, plot = TRUE, p
 
 # 1.
 ```{r}
-table(test$purpose, best_rf_pred$.pred_class)/(dim(test)*100)
+table(test$purpose, best_rf_pred$.pred_class)
 ```
 
 
 # 2.
 
 ```{r}
+outcome <- ifelse(test$purpose == best_rf_pred$.pred_class, TRUE, FALSE) %>% 
+  as.factor()
+ggplot(data = NULL, aes(test$purpose, best_rf_pred$.pred_1)) + 
+  geom_point(aes(color = outcome)) + 
+  scale_colour_manual(values = c("red", "black")) +
+  xlab("Actual Class") + ylab("Predicted Probability of Class 1") +
+  ggtitle("Class 1 Prediction Plot")
+```
 
 
 # 3.
 
+```{r}
+
+```
 
 
 # Uncertainty Quantification
 
 ```{r}
+# Test on validation set
 val_pred <- predict(best_model, val)$.pred_class
-table(val_pred, val$purpose)/491*100
+table(val_pred, val$purpose)/576*100
 ```
 
 ```{r}
@@ -518,3 +526,4 @@ for (samp in bootstrap_fit_orders$.metrics){
 }
 ```
 
+# Future steps / further refinement, boosting to fix misclassification of 0 (Convenience) class.
