@@ -114,6 +114,7 @@ orders <- orders %>% filter(user_id %in% ids)
 sum(unique(orders$order_id))
 sum(unique(orders$user_id))
 head(orders)
+#write.csv(orders, file = "orders.csv", row.names = FALSE)
 ```
 
 A random sample of 500 users id's are selected and their corresponding order details are considered.
@@ -633,5 +634,28 @@ for (samp in bootstrap_fit_orders$.metrics){
   print(s$.estimate)
 }
 ```
+
+## Add ons used
+
+The five add ons demonstrated in this project are:
+
+1. Writing a relevant custom function.
+
+2. Performing a relevant word cloud graphic.
+
+3. Fitting a relevant topic model.
+
+4. Making a github repository for the project.
+
+5. Performing Market Basket Analysis using Apriori algorithm.
+
+
+## Source of the dataset
+
+https://www.kaggle.com/competitions/instacart-market-basket-analysis/data
+
+
+
+
 
 # Future steps / further refinement, boosting to fix misclassification of 0 (Convenience) class.
