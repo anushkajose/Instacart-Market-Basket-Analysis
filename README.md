@@ -1,4 +1,4 @@
-# STAT-5125-Project - Instacart Market Basket Analysis
+# STAT 5125 Project - Instacart Market Basket Analysis
 
 ## Project Objective:
 
